@@ -164,81 +164,16 @@ class AuthService {
   static final _db = FirebaseFirestore.instance;
   static final _google = GoogleSignIn.instance;
   static Future<void>? _googleInit;
+  static const _googleServerClientId =
+      '473039714274-o30pp7p49r5ds66r035se1s95ac9n867.apps.googleusercontent.com';
 
-  static const _ownerNotificationEmail = '';
-  static const _googleServerClientId = '';
-
-  static Future<void> _initGoogle() {
-    return _googleInit ??= _google.initialize(
-      serverClientId: _googleServerClientId.isEmpty
-          ? null
-          : _googleServerClientId,
-    );
-  }
+  static Future<void> _initGoogle() => _googleInit ??= _google.initialize(
+    serverClientId: _googleServerClientId,
+  );
 
   // ── Email Sign In ────────────────────────────────────────────
-  static Future<void> _queueAuthEmail({
-    required User user,
-    required String action,
-    required String provider,
-    String? fallbackEmail,
-    String? farmName,
-  }) async {
-    final email = user.email ?? fallbackEmail;
-    if (email == null || email.trim().isEmpty) return;
-
-    final recipients = <String>{email.trim()};
-    if (_ownerNotificationEmail.isNotEmpty) {
-      recipients.add(_ownerNotificationEmail);
-    }
-
-    final isRegistration = action == 'registered';
-    final name = user.displayName?.trim().isNotEmpty == true
-        ? user.displayName!.trim()
-        : email.trim();
-    final subject = isRegistration ? 'Welcome' : 'You signed in successfully';
-    final intro = isRegistration
-        ? 'Welcome, $name! Your account was created successfully.'
-        : 'Hello $name, you signed in successfully with $provider.';
-    final farmLine = farmName == null || farmName.trim().isEmpty
-        ? ''
-        : '<p>Farm: <strong>${farmName.trim()}</strong></p>';
-
-    await _db.collection('mail').add({
-      'to': recipients.toList(),
-      'message': {
-        'subject': subject,
-        'text': '$intro If this was not you, please change your password.',
-        'html':
-            '''
-<div style="background:#0a1a0e;color:#f0fdf4;padding:28px;font-family:sans-serif;border-radius:12px;">
-  <h1 style="color:#4ade80;margin:0 0 12px;">QolKol</h1>
-  <h2 style="margin:0 0 12px;">$subject</h2>
-  <p>$intro</p>
-  $farmLine
-  <p style="color:#6ee7b7;font-size:12px;">If this was not you, change your password.</p>
-</div>''',
-      },
-      'action': action,
-      'provider': provider,
-      'uid': user.uid,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-  }
-
-  static Future<UserCredential> signInEmail(String email, String pass) async {
-    final cred = await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: pass,
-    );
-    await _queueAuthEmail(
-      user: cred.user!,
-      fallbackEmail: email,
-      action: 'signed in',
-      provider: 'email/password',
-    );
-    return cred;
-  }
+  static Future<UserCredential> signInEmail(String email, String pass) =>
+      _auth.signInWithEmailAndPassword(email: email, password: pass);
 
   // ── Email Register + Auto Email ──────────────────────────────
   static Future<UserCredential> registerEmail({
@@ -254,6 +189,7 @@ class AuthService {
     );
     await cred.user?.updateDisplayName(name);
 
+    // Save to Firestore
     await _db.collection('users').doc(cred.user!.uid).set({
       'uid': cred.user!.uid,
       'name': name,
@@ -265,16 +201,34 @@ class AuthService {
       'createdAt': FieldValue.serverTimestamp(),
     });
 
+    // Firebase Auth email verification
     await cred.user?.sendEmailVerification();
-    await _queueAuthEmail(
-      user: cred.user!,
-      fallbackEmail: email,
-      action: 'registered',
-      provider: 'email/password',
-      farmName: farmName,
-    );
+
+    // Auto welcome email via Firebase Trigger Email extension
+    await _db.collection('mail').add({
+      'to': email,
+      'message': {
+        'subject': '🌾 DalaAI-ға қош келдіңіз! Welcome to DalaAI!',
+        'html':
+            '''
+<div style="background:#0a1a0e;color:#f0fdf4;padding:32px;font-family:sans-serif;border-radius:12px;">
+  <h1 style="color:#4ade80;">🌱 DalaAI</h1>
+  <p>Сәлем, <strong>$name</strong>! DalaAI-ға тіркелгеніңіз үшін рақмет!</p>
+  <p>Сіздің фермаңыз: <strong>$farmName</strong></p>
+  <p>Енді сіз алаасыз:</p>
+  <ul>
+    <li>📡 Спутниктік дақыл мониторингі</li>
+    <li>🧠 AI өнім болжамы (90%+ дәлдік)</li>
+    <li>🌦️ Гиперлокальды ауа-райы</li>
+    <li>💹 Нарықтық баға деректері</li>
+  </ul>
+  <p style="color:#6ee7b7;font-size:12px;">© 2025 DalaAI | Almaty, Kazakhstan | dalaai.kz</p>
+</div>''',
+      },
+    });
     return cred;
   }
+
   // ── Google Sign In ───────────────────────────────────────────
   static Future<UserCredential?> signInGoogle() async {
     await _initGoogle();
@@ -286,11 +240,6 @@ class AuthService {
       throw Exception('Google sign-in failed: ${e.description ?? e.code.name}');
     }
     final googleAuth = googleUser.authentication;
-    if (googleAuth.idToken == null) {
-      throw Exception(
-        'Google Sign-In is missing an ID token. Add SHA-1/SHA-256 to Firebase, enable Google provider, then download a fresh google-services.json.',
-      );
-    }
     final credential = GoogleAuthProvider.credential(
       idToken: googleAuth.idToken,
     );
@@ -298,8 +247,7 @@ class AuthService {
 
     final doc = _db.collection('users').doc(cred.user!.uid);
     final snap = await doc.get();
-    final isNewUser = !snap.exists;
-    if (isNewUser) {
+    if (!snap.exists) {
       await doc.set({
         'uid': cred.user!.uid,
         'name': cred.user!.displayName ?? '',
@@ -310,14 +258,17 @@ class AuthService {
         'role': 'farmer',
         'createdAt': FieldValue.serverTimestamp(),
       });
+      await _db.collection('mail').add({
+        'to': cred.user!.email,
+        'message': {
+          'subject': '🌾 Welcome to DalaAI!',
+          'text': 'Your smart farming platform is ready. Visit dalaai.kz',
+        },
+      });
     }
-    await _queueAuthEmail(
-      user: cred.user!,
-      action: isNewUser ? 'registered' : 'signed in',
-      provider: 'Google',
-    );
     return cred;
   }
+
   // ── Sign Out ─────────────────────────────────────────────────
   static Future<void> signOut() async {
     try {
@@ -988,7 +939,7 @@ class DashboardScreen extends StatelessWidget {
                     ? 0.0
                     : docs.fold<double>(
                             0.0,
-                             (total, d) =>
+                            (total, d) =>
                                 total +
                                 ((d.data() as Map)['ndvi'] as double? ?? 0),
                           ) /
@@ -2233,8 +2184,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       final docs = s.data?.docs ?? [];
                       final total = docs.fold<int>(
                         0,
-                        (total, d) =>
-                            total + ((d.data() as Map)['area'] as int? ?? 0),
+                        (areaTotal, d) =>
+                            areaTotal + ((d.data() as Map)['area'] as int? ?? 0),
                       );
                       return Row(
                         children: [

@@ -1,8 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="QolKol"
+        android:label="DalaAI"
         android:name="${applicationName}"
-        android:icon="@drawable/qolkol_launcher">
+        android:icon="@drawable/dalaai_launcher">
         <activity
             android:name=".MainActivity"
             android:exported="true"
