@@ -357,8 +357,22 @@ class FirestoreService {
     return _db
         .collection('fields')
         .where('ownerId', isEqualTo: uid)
-        .orderBy('createdAt', descending: false)
-        .snapshots();
+        .snapshots(includeMetadataChanges: true);
+  }
+
+  static List<QueryDocumentSnapshot> sortedFieldDocs(QuerySnapshot snap) {
+    final docs = snap.docs.toList();
+    docs.sort((a, b) {
+      final ad = a.data() as Map;
+      final bd = b.data() as Map;
+      final at = ad['createdAt'];
+      final bt = bd['createdAt'];
+      if (at is Timestamp && bt is Timestamp) return at.compareTo(bt);
+      if (at is Timestamp) return 1;
+      if (bt is Timestamp) return -1;
+      return a.id.compareTo(b.id);
+    });
+    return docs;
   }
 
   // ── FIELD CREATE ─────────────────────────────────────────────
@@ -371,6 +385,7 @@ class FirestoreService {
     final uid = AuthService.currentUser!.uid;
     await _db.collection('fields').add({
       'ownerId': uid,
+      'ownerEmail': AuthService.currentUser?.email ?? '',
       'name': name,
       'crop': crop,
       'area': area,
@@ -384,12 +399,16 @@ class FirestoreService {
       'marketPrice': 80000,
       'status': 'Growing',
       'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
 
   // ── FIELD UPDATE ─────────────────────────────────────────────
   static Future<void> updateField(String id, Map<String, dynamic> data) =>
-      _db.collection('fields').doc(id).update(data);
+      _db.collection('fields').doc(id).update({
+        ...data,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
   // ── FIELD DELETE ─────────────────────────────────────────────
   static Future<void> deleteField(String id) =>
@@ -928,7 +947,9 @@ class DashboardScreen extends StatelessWidget {
             StreamBuilder<QuerySnapshot>(
               stream: FirestoreService.getFields(),
               builder: (_, snap) {
-                final docs = snap.data?.docs ?? [];
+                final docs = snap.hasData
+                    ? FirestoreService.sortedFieldDocs(snap.data!)
+                    : <QueryDocumentSnapshot>[];
                 final totalArea = docs.fold<int>(
                   0,
                   (total, d) =>
@@ -973,7 +994,12 @@ class DashboardScreen extends StatelessWidget {
                       child: CircularProgressIndicator(color: kGreen),
                     );
                   }
-                  final docs = snap.data?.docs ?? [];
+                  if (snap.hasError) {
+                    return _SyncErrorBox(error: snap.error.toString());
+                  }
+                  final docs = snap.hasData
+                      ? FirestoreService.sortedFieldDocs(snap.data!)
+                      : <QueryDocumentSnapshot>[];
                   if (docs.isEmpty) {
                     return Center(
                       child: Column(
@@ -1052,6 +1078,48 @@ class _MiniStat extends StatelessWidget {
 }
 
 // ── Field Card ───────────────────────────────────────────────────
+class _SyncErrorBox extends StatelessWidget {
+  final String error;
+  const _SyncErrorBox({required this.error});
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: kRed.withValues(alpha: .1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: kRed.withValues(alpha: .35)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.sync_problem_rounded, color: kRed, size: 32),
+            const SizedBox(height: 10),
+            const Text(
+              'Cloud sync error',
+              style: TextStyle(
+                color: kText,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: kMuted, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 class _FieldCard extends StatelessWidget {
   final FieldModel field;
   const _FieldCard({required this.field});
@@ -2180,7 +2248,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   StreamBuilder<QuerySnapshot>(
                     stream: FirestoreService.getFields(),
                     builder: (_, s) {
-                      final docs = s.data?.docs ?? [];
+                      final docs = s.hasData
+                          ? FirestoreService.sortedFieldDocs(s.data!)
+                          : <QueryDocumentSnapshot>[];
                       final total = docs.fold<int>(
                         0,
                         (areaTotal, d) =>
