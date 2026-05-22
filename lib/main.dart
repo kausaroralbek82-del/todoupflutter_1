@@ -181,25 +181,26 @@ class AuthService {
     required String farmName,
   }) async {
     if (email.trim().isEmpty) return;
-    final displayName = name.trim().isEmpty ? email.trim() : name.trim();
-    final farm = farmName.trim().isEmpty ? 'DalaAI farm' : farmName.trim();
 
     await _db.collection('mail').add({
       'to': email.trim(),
       'message': {
-        'subject': 'DalaAI application-ге қош келдіңіз',
+        'subject': 'Congratulations! You have successfully registered',
         'text':
-            'Сәлем, $displayName! Сіз DalaAI application-ге қош келдіңіз. Фермаңыз: $farm.',
+            'Congratulations!\n\n'
+            'You have successfully registered in our application.\n\n'
+            'We are excited to have you with us and hope you enjoy using the app.\n'
+            'Thank you for joining our community!\n\n'
+            'Best regards,\n'
+            'The Team',
         'html':
             '''
-<div style="background:#0a1a0e;color:#f0fdf4;padding:32px;font-family:sans-serif;border-radius:14px;">
-  <h1 style="color:#4ade80;margin:0 0 12px;">DalaAI</h1>
-  <h2 style="color:#fbbf24;margin:0 0 16px;">Application-ге қош келдіңіз</h2>
-  <p>Сәлем, <strong>$displayName</strong>!</p>
-  <p>Сіз DalaAI application-ге сәтті тіркелдіңіз.</p>
-  <p>Фермаңыз: <strong>$farm</strong></p>
-  <p>Енді сіз егістік қосып, NDVI денсаулығын, AI өнім болжамын және нарық бағасын көре аласыз.</p>
-  <p style="color:#6ee7b7;font-size:12px;">DalaAI | Smart Farming Platform for Kazakhstan</p>
+<div style="background:#0a1a0e;color:#f0fdf4;padding:32px;font-family:Arial,sans-serif;border-radius:14px;line-height:1.55;">
+  <h1 style="color:#4ade80;margin:0 0 16px;">Congratulations! 🎉</h1>
+  <p>You have successfully registered in our application.</p>
+  <p>We are excited to have you with us and hope you enjoy using the app.</p>
+  <p>Thank you for joining our community!</p>
+  <p style="margin-top:24px;">Best regards,<br><strong>The Team</strong></p>
 </div>''',
       },
       'createdAt': FieldValue.serverTimestamp(),
