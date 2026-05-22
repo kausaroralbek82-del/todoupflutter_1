@@ -175,6 +175,37 @@ class AuthService {
   static Future<UserCredential> signInEmail(String email, String pass) =>
       _auth.signInWithEmailAndPassword(email: email, password: pass);
 
+  static Future<void> _sendWelcomeEmail({
+    required String email,
+    required String name,
+    required String farmName,
+  }) async {
+    if (email.trim().isEmpty) return;
+    final displayName = name.trim().isEmpty ? email.trim() : name.trim();
+    final farm = farmName.trim().isEmpty ? 'DalaAI farm' : farmName.trim();
+
+    await _db.collection('mail').add({
+      'to': email.trim(),
+      'message': {
+        'subject': 'DalaAI application-ге қош келдіңіз',
+        'text':
+            'Сәлем, $displayName! Сіз DalaAI application-ге қош келдіңіз. Фермаңыз: $farm.',
+        'html':
+            '''
+<div style="background:#0a1a0e;color:#f0fdf4;padding:32px;font-family:sans-serif;border-radius:14px;">
+  <h1 style="color:#4ade80;margin:0 0 12px;">DalaAI</h1>
+  <h2 style="color:#fbbf24;margin:0 0 16px;">Application-ге қош келдіңіз</h2>
+  <p>Сәлем, <strong>$displayName</strong>!</p>
+  <p>Сіз DalaAI application-ге сәтті тіркелдіңіз.</p>
+  <p>Фермаңыз: <strong>$farm</strong></p>
+  <p>Енді сіз егістік қосып, NDVI денсаулығын, AI өнім болжамын және нарық бағасын көре аласыз.</p>
+  <p style="color:#6ee7b7;font-size:12px;">DalaAI | Smart Farming Platform for Kazakhstan</p>
+</div>''',
+      },
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   // ── Email Register + Auto Email ──────────────────────────────
   static Future<UserCredential> registerEmail({
     required String name,
@@ -204,28 +235,7 @@ class AuthService {
     // Firebase Auth email verification
     await cred.user?.sendEmailVerification();
 
-    // Auto welcome email via Firebase Trigger Email extension
-    await _db.collection('mail').add({
-      'to': email,
-      'message': {
-        'subject': '🌾 DalaAI-ға қош келдіңіз! Welcome to DalaAI!',
-        'html':
-            '''
-<div style="background:#0a1a0e;color:#f0fdf4;padding:32px;font-family:sans-serif;border-radius:12px;">
-  <h1 style="color:#4ade80;">🌱 DalaAI</h1>
-  <p>Сәлем, <strong>$name</strong>! DalaAI-ға тіркелгеніңіз үшін рақмет!</p>
-  <p>Сіздің фермаңыз: <strong>$farmName</strong></p>
-  <p>Енді сіз алаасыз:</p>
-  <ul>
-    <li>📡 Спутниктік дақыл мониторингі</li>
-    <li>🧠 AI өнім болжамы (90%+ дәлдік)</li>
-    <li>🌦️ Гиперлокальды ауа-райы</li>
-    <li>💹 Нарықтық баға деректері</li>
-  </ul>
-  <p style="color:#6ee7b7;font-size:12px;">© 2025 DalaAI | Almaty, Kazakhstan | dalaai.kz</p>
-</div>''',
-      },
-    });
+    await _sendWelcomeEmail(email: email, name: name, farmName: farmName);
     return cred;
   }
 
@@ -258,13 +268,11 @@ class AuthService {
         'role': 'farmer',
         'createdAt': FieldValue.serverTimestamp(),
       });
-      await _db.collection('mail').add({
-        'to': cred.user!.email,
-        'message': {
-          'subject': '🌾 Welcome to DalaAI!',
-          'text': 'Your smart farming platform is ready. Visit dalaai.kz',
-        },
-      });
+      await _sendWelcomeEmail(
+        email: cred.user!.email ?? '',
+        name: cred.user!.displayName ?? '',
+        farmName: 'My Farm',
+      );
     }
     return cred;
   }
@@ -539,25 +547,7 @@ class _LoginScreenState extends State<LoginScreen> {
               key: _form,
               child: Column(
                 children: [
-                  // Logo
-                  Container(
-                    width: 84,
-                    height: 84,
-                    decoration: BoxDecoration(
-                      color: kGreen,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'D',
-                        style: TextStyle(
-                          color: kBg,
-                          fontSize: 48,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
+                  const _DalaAiMark(size: 92),
                   const SizedBox(height: 14),
                   const Text(
                     'DalaAI',
@@ -739,13 +729,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Join DalaAI 🌾',
-                  style: TextStyle(
-                    color: kText,
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                  ),
+                const Row(
+                  children: [
+                    _DalaAiMark(size: 54),
+                    SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'Join DalaAI',
+                        style: TextStyle(
+                          color: kText,
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 const Text(
@@ -2285,6 +2283,100 @@ class _PTile extends StatelessWidget {
 // ================================================================
 // SHARED WIDGETS
 // ================================================================
+
+class _DalaAiMark extends StatelessWidget {
+  final double size;
+  const _DalaAiMark({required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final inner = size * .42;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: const Color(0xFFE8FFF0),
+        boxShadow: [
+          BoxShadow(
+            color: kGreen.withValues(alpha: .28),
+            blurRadius: 26,
+            offset: const Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Container(
+          width: size * .76,
+          height: size * .76,
+          decoration: const BoxDecoration(shape: BoxShape.circle, color: kGreen),
+          child: Center(
+            child: Container(
+              width: inner,
+              height: inner * 1.16,
+              decoration: BoxDecoration(
+                color: kCard,
+                borderRadius: BorderRadius.circular(size * .05),
+                border: Border.all(color: kAmber2, width: size * .025),
+              ),
+              child: CustomPaint(painter: _WheatPainter()),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WheatPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stem = Paint()
+      ..color = kAmber
+      ..strokeWidth = size.width * .08
+      ..strokeCap = StrokeCap.round;
+    final grain = Paint()..color = kAmber2;
+    final leaf = Paint()..color = kGreen2;
+    final centerX = size.width * .5;
+
+    canvas.drawLine(
+      Offset(centerX, size.height * .86),
+      Offset(centerX, size.height * .18),
+      stem,
+    );
+
+    for (final y in [.28, .42, .56]) {
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(centerX - size.width * .16, size.height * y),
+          width: size.width * .28,
+          height: size.height * .18,
+        ),
+        grain,
+      );
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(centerX + size.width * .16, size.height * y),
+          width: size.width * .28,
+          height: size.height * .18,
+        ),
+        grain,
+      );
+    }
+
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(centerX, size.height * .76),
+        width: size.width * .62,
+        height: size.height * .18,
+      ),
+      leaf,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 class _Field extends StatelessWidget {
   final TextEditingController ctrl;
